@@ -2,6 +2,7 @@
 # # vi: set ft=ruby :
 
 require 'fileutils'
+require 'yaml'
 
 Vagrant.require_version ">= 1.6.0"
 
@@ -27,7 +28,11 @@ $shared_folders = {}
 $forwarded_ports = {}
 
 # Ansible inventory file string
-$inventory = ""
+$inventory = {
+  'masters' => [],
+  'workers' => [],
+}
+
 # Instances array
 $instances = Array.new
 
@@ -135,23 +140,13 @@ Vagrant.configure("2") do |config|
       end
 
       # Gather hosts into inventory pool
-      if $instances[i]['num'] == 1 then
-        $inventory.concat "\n[#{$instances[i]['role']}]\n"
-      end
-      $inventory.concat "#{$instances[i]['ip']}\n"
+      $inventory[$instances[i]['role']] << $instances[i]
 
       # Run ansible tasks after last host is created
       if i == $num_instances then
-        # Write local ansible inventory
-        File.open($ansible_inventory ,'w') do |f|
-          $inventory.concat "\n[coreos:children]\nvagrant\n\n[vagrant:children]\nmasterss\nnodes\n\n[k8s_api_server:children]\nmasterss\n\n[k8s_kube:children]\nnodes\n\n[etcd:children]\nmasterss\n"
-          f.write $inventory
-        end
-        # Provision hosts
-        config.vm.provision "ansible" do |ansible|
-          ansible.playbook = $ansible_playbook
-          ansible.inventory_path = $ansible_inventory
-          ansible.limit = 'all'
+        File.open('output.yml', 'w') do |f|
+          # write output.yaml with masters / workers information
+          f.write $inventory.to_yaml
         end
       end
     end
