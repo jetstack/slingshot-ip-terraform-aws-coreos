@@ -144,7 +144,7 @@ Vagrant.configure("2") do |config|
 
       # Run ansible tasks after last host is created
       if i == $num_instances then
-        File.open('output.yml', 'w') do |f|
+        File.open('output.yaml', 'w') do |f|
           # write output.yaml with masters / workers information
           f.write $inventory.to_yaml
         end

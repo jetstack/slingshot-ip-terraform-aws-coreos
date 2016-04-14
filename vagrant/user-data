@@ -1,6 +1,4 @@
-write_files:
-  - path: /etc/resolv.conf
-    permissions: 0644
-    owner: root
-    content: |
-      nameserver 8.8.8.8
+#cloud-config
+
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAudv3Ps03Aa9+MiBJJ+vhEUGibmKQnucmXLQUQB++0UhsMVxaKTbfJLyLjZLNS2OEH3gkCPMX/4eoybiYK+vx4N+/ZModRHI+sI8Xop6kTMksjKfwETdknvoDtZfRERDzJXLoRTNfi4QZTHpM2HEQlRxdL03AbQ76usBi5MuUj2jFEIEVXOf/oTZTjF2zGUlc4+C4HBhDhQifQVNi5yhVUSyGNP8EK73/Brkkg4osKSmAjD0kgKn/9UQwl3bN/ZaHUL5GuzS6XXdLbU99gwpw1cOX1vak/8rzvYrQZMt8TIoYyRQrhuQXOSVFfdg2yZKl2mW46UoleBc5ZWRPsG7inQ== 2009-rsa-simon@swine.de

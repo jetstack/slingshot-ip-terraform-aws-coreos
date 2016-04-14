@@ -7,9 +7,16 @@ provider:
   version: 1
 commands:
   apply:
-    type: hostCommand
-    output: output.yml
-    pwdContent: !!binary |
+    execs:
+      -
+        - vagrant
+        - up
+    type: host
+    parameterFile: params.yaml
+    resultFile: output.yaml
+    persistPaths:
+      - .vagrant/
+    workingDirContent: !!binary |
 $(tar -C vagrant -czf - . | base64 | awk '{print "      "$1}')
 EOF
 }
