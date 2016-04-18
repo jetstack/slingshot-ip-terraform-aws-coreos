@@ -16,7 +16,6 @@ class Slingshot
     inst['roles'] = [instance['role']]
     inst.delete 'role'
     @instances << inst
-    puts @instances
   end
 
   def parameters
