@@ -12,7 +12,7 @@ commands:
         - vagrant
         - up
     type: host
-    parameterFile: params.yaml
+    parameterFile: parameters.yaml
     resultFile: output.yaml
     persistPaths:
       - .vagrant/

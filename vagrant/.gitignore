@@ -1,2 +1,3 @@
 output.yaml
 .vagrant/
+.temp-user-data.yaml

@@ -3,19 +3,95 @@
 
 require 'fileutils'
 require 'yaml'
+require 'tempfile'
 
 Vagrant.require_version ">= 1.6.0"
 
-CLOUD_CONFIG_PATH = File.join(File.dirname(__FILE__), "user-data.yaml")
-CONFIG = File.join(File.dirname(__FILE__), "config.rb")
+class Slingshot
+  UserDataTemplate = 'user-data.yaml'
+
+  def add_instance(instance)
+    @instances ||= []
+    inst = instance.clone
+    inst['roles'] = [instance['role']]
+    inst.delete 'role'
+    @instances << inst
+    puts @instances
+  end
+
+  def parameters
+    @parameters ||= YAML.load_file(parameters_path)
+  end
+
+  def parameters_path
+    full_path('parameters.yaml')
+  end
+
+  def user_data_template
+    @user_data_template ||= YAML.load_file(user_data_template_path)
+  end
+
+  def user_data_template_path
+    full_path('user-data.yaml')
+  end
+
+  def user_data
+    key = 'ssh_authorized_keys'
+    data = user_data_template.clone
+    data[key] = [] unless data.has_key? key
+    data[key] << parameters['general']['authentication']['ssh']['pubKey']
+    "#cloud-config\n" + data.to_yaml
+  end
+
+  def user_data_path
+    @user_data_path ||= create_user_data
+  end
+
+  def create_user_data
+    file = File.new(full_path('.temp-user-data.yaml'), 'w')
+    file.write(user_data)
+    file.close
+    file.path
+  end
+
+  def full_path(path)
+    File.join(File.dirname(__FILE__), path)
+  end
+
+  def workers_count
+    parameters['general']['cluster']['kubernetes']['workersCount']
+  end
+
+  def masters_count
+    parameters['general']['cluster']['kubernetes']['mastersCount']
+  end
+
+  def output_path
+    full_path('output.yaml')
+  end
+
+  def write_output
+    File.open(output_path, 'w') do |file|
+      file.write({
+        'inventory' => @instances
+      }.to_yaml)
+    end
+  end
+end
+
+$slingshot = Slingshot.new
+
+at_exit do
+  $slingshot.write_output
+end
 
 # Defaults for config options defined in CONFIG
-$ip_range = '192.168.101.'
-$ip_start = 50
-$masters_instances = 1
-$workers_instances = 1
+$ip_range = '10.251.0.'
+$ip_start = 100
+$masters_instances = $slingshot.masters_count
+$workers_instances = $slingshot.workers_count
 $instance_name_prefix = "core"
-$update_channel = "alpha"
+$update_channel = "stable"
 $image_version = "current"
 $enable_serial_logging = false
 $share_home = false
@@ -28,10 +104,7 @@ $shared_folders = {}
 $forwarded_ports = {}
 
 # Ansible inventory file string
-$inventory = {
-  'masters' => [],
-  'workers' => [],
-}
+$inventory = []
 
 # Instances array
 $instances = Array.new
@@ -40,10 +113,6 @@ $instances = Array.new
 # $num_instances while allowing config.rb to override it
 if ENV["NUM_INSTANCES"].to_i > 0 && ENV["NUM_INSTANCES"]
   $num_instances = ENV["NUM_INSTANCES"].to_i
-end
-
-if File.exist?(CONFIG)
-  require CONFIG
 end
 
 $num_instances = $masters_instances + $workers_instances
@@ -134,21 +203,14 @@ Vagrant.configure("2") do |config|
 
       config.vm.network :private_network, ip: $instances[i]['ip']
 
-      if File.exist?(CLOUD_CONFIG_PATH)
-        config.vm.provision :file, :source => "#{CLOUD_CONFIG_PATH}", :destination => "/tmp/vagrantfile-user-data"
+      user_data = $slingshot.user_data_path
+      if File.exist?(user_data)
+        config.vm.provision :file, :source => "#{user_data}", :destination => "/tmp/vagrantfile-user-data"
         config.vm.provision :shell, :inline => "mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/", :privileged => true
       end
 
       # Gather hosts into inventory pool
-      $inventory[$instances[i]['role']] << $instances[i]
-
-      # Run ansible tasks after last host is created
-      if i == $num_instances then
-        File.open('output.yaml', 'w') do |f|
-          # write output.yaml with masters / workers information
-          f.write $inventory.to_yaml
-        end
-      end
+      $slingshot.add_instance($instances[i])
     end
   end
 end

@@ -1,2 +1,4 @@
+vagrant/output.yaml
+vagrant/parameters.yaml
+vagrant/.temp-user-data.yaml
 vagrant/.vagrant/
-vagrant/output.yml
