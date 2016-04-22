@@ -1,153 +1,39 @@
 # -*- mode: ruby -*-
 # # vi: set ft=ruby :
 
-require 'fileutils'
-require 'yaml'
-require 'tempfile'
+require File.join(File.dirname(__FILE__), 'slingshot.rb')
 
 Vagrant.require_version ">= 1.6.0"
 
-class Slingshot
-  UserDataTemplate = 'user-data.yaml'
-
-  def add_instance(instance)
-    @instances ||= []
-    inst = instance.clone
-    inst['roles'] = [instance['role']]
-    inst.delete 'role'
-    @instances << inst
-  end
-
-  def parameters
-    @parameters ||= YAML.load_file(parameters_path)
-  end
-
-  def parameters_path
-    full_path('parameters.yaml')
-  end
-
-  def user_data_template
-    @user_data_template ||= YAML.load_file(user_data_template_path)
-  end
-
-  def user_data_template_path
-    full_path('user-data.yaml')
-  end
-
-  def user_data
-    key = 'ssh_authorized_keys'
-    data = user_data_template.clone
-    data[key] = [] unless data.has_key? key
-    data[key] << parameters['general']['authentication']['ssh']['pubKey']
-    "#cloud-config\n" + data.to_yaml
-  end
-
-  def user_data_path
-    @user_data_path ||= create_user_data
-  end
-
-  def create_user_data
-    file = File.new(full_path('.temp-user-data.yaml'), 'w')
-    file.write(user_data)
-    file.close
-    file.path
-  end
-
-  def full_path(path)
-    File.join(File.dirname(__FILE__), path)
-  end
-
-  def workers_count
-    parameters['general']['cluster']['kubernetes']['workersCount']
-  end
-
-  def masters_count
-    parameters['general']['cluster']['kubernetes']['mastersCount']
-  end
-
-  def output_path
-    full_path('output.yaml')
-  end
-
-
-  def output
-    {
-      'general' => {
-        'cluster' => {
-          'kubernetes' => {
-            # this is needed as vagrant's eth0 is a NAT interface, kubernetes needs to run on eth1
-            'interface' => 'eth1',
-          },
-        },
-      },
-      'inventory' => @instances,
-    }
-  end
-
-  def write_output
-    File.open(output_path, 'w') do |file|
-      file.write(output.to_yaml)
-    end
-  end
-end
-
+# Load slingshot
 $slingshot = Slingshot.new
-
 at_exit do
   $slingshot.write_output
 end
-
-# Defaults for config options defined in CONFIG
-$ip_range = '10.251.0.'
-$ip_start = 100
-$masters_instances = $slingshot.masters_count
-$workers_instances = $slingshot.workers_count
-$instance_name_prefix = "core"
-$update_channel = "stable"
-$image_version = "current"
-$enable_serial_logging = false
-$share_home = false
-$vm_gui = false
-$vm_masters_memory = 512
-$vm_masters_cpus = 1
-$vm_workers_memory = 1024
-$vm_workers_cpus = 1
-$shared_folders = {}
-$forwarded_ports = {}
-
-# Ansible inventory file string
-$inventory = []
-
-# Instances array
-$instances = Array.new
-
-# Attempt to apply the deprecated environment variable NUM_INSTANCES to
-# $num_instances while allowing config.rb to override it
-if ENV["NUM_INSTANCES"].to_i > 0 && ENV["NUM_INSTANCES"]
-  $num_instances = ENV["NUM_INSTANCES"].to_i
-end
-
-$num_instances = $masters_instances + $workers_instances
 
 Vagrant.configure("2") do |config|
   # always use Vagrants insecure key
   config.ssh.insert_key = false
 
-  config.vm.box = "coreos-%s" % $update_channel
-  if $image_version != "current"
-      config.vm.box_version = $image_version
-  end
-  config.vm.box_url = "http://%s.release.core-os.net/amd64-usr/%s/coreos_production_vagrant.json" % [$update_channel, $image_version]
 
+  core_os = [
+    $slingshot.coreos_update_channel,
+    $slingshot.coreos_image_version,
+  ]
+
+  config.vm.box = "coreos-#{core_os[0]}"
+
+  # set version only if it's not current
+  config.vm.box_version = core_os[1] unless core_os[1] == 'current'
+
+  config.vm.box_url = "http://%s.release.core-os.net/amd64-usr/%s/coreos_production_vagrant.json" % core_os
   ["vmware_fusion", "vmware_workstation"].each do |vmware|
     config.vm.provider vmware do |v, override|
-      override.vm.box_url = "http://%s.release.core-os.net/amd64-usr/%s/coreos_production_vagrant_vmware_fusion.json" % [$update_channel, $image_version]
+      override.vm.box_url = "http://%s.release.core-os.net/amd64-usr/%s/coreos_production_vagrant_vmware_fusion.json" % core_os
     end
   end
 
   config.vm.provider :virtualbox do |v|
-    # On VirtualBox, we don't have guest additions or a functional vboxsf
-    # in CoreOS, so tell Vagrant that so it can be smarter.
     v.check_guest_additions = false
     v.functional_vboxsf     = false
   end
@@ -157,72 +43,34 @@ Vagrant.configure("2") do |config|
     config.vbguest.auto_update = false
   end
 
-  (1..$num_instances).each do |i|
-    # Kubernetes node role
-    role = i <= $masters_instances ? "masters" : "workers"
-    # Number of instance
-    instance_num = role == "masters" ? i : (i - $masters_instances)
-    # Store instance info for global use
-    $instances[i] = {
-      "name" => "#{$instance_name_prefix}-#{role}-#{instance_num}",
-      "hostname" => "#{role}-#{instance_num}.#{$instance_name_prefix}.den",
-      "role" => role,
-      "num" => instance_num,
-      "ip" => "#{$ip_range}#{i + $ip_start}"
-    }
-    config.vm.define vm_name = $instances[i]['name'] do |config|
-      config.vm.hostname = $instances[i]['hostname']
 
-      if $enable_serial_logging
-        logdir = File.join(File.dirname(__FILE__), "log")
-        FileUtils.mkdir_p(logdir)
+  $slingshot.machines.each do |machine|
 
-        serialFile = File.join(logdir, "%s-serial.txt" % vm_name)
-        FileUtils.touch(serialFile)
+    config.vm.define machine.hostname do |config_vm|
 
-        ["vmware_fusion", "vmware_workstation"].each do |vmware|
-          config.vm.provider vmware do |v, override|
-            v.vmx["serial0.present"] = "TRUE"
-            v.vmx["serial0.fileType"] = "file"
-            v.vmx["serial0.fileName"] = serialFile
-            v.vmx["serial0.tryNoRxLoss"] = "FALSE"
-          end
-        end
-
-        config.vm.provider :virtualbox do |vb, override|
-          vb.customize ["modifyvm", :id, "--uart1", "0x3F8", "4"]
-          vb.customize ["modifyvm", :id, "--uartmode1", serialFile]
-        end
-      end
-
-      $forwarded_ports.each do |guest, host|
-        config.vm.network "forwarded_port", guest: guest, host: host, auto_correct: true
-      end
+      config_vm.vm.hostname = machine.fqdn
 
       ["vmware_fusion", "vmware_workstation"].each do |vmware|
-        config.vm.provider vmware do |v|
+        config_vm.vm.provider vmware do |v|
           v.gui = $vm_gui
-          v.vmx['memsize'] = $role == "masters" ? $vm_masters_memory : $vm_workers_memory
-          v.vmx['numvcpus'] = $role == "masters" ? $vm_masters_cpus : $vm_workers_cpus
+          v.vmx['memsize'] = machine.memory
+          v.vmx['numvcpus'] = machine.cores
         end
       end
 
-      config.vm.provider :virtualbox do |vb|
+      config_vm.vm.provider :virtualbox do |vb|
         vb.gui = $vm_gui
-        vb.memory = $role == "masters" ? $vm_masters_memory : $vm_workers_memory
-        vb.cpus = $role == "masters" ? $vm_masters_cpus : $vm_workers_cpus
+        vb.memory = machine.memory
+        vb.cpus = machine.cores
       end
 
-      config.vm.network :private_network, ip: $instances[i]['ip']
+      config_vm.vm.network :private_network, ip: machine.ip
 
       user_data = $slingshot.user_data_path
       if File.exist?(user_data)
-        config.vm.provision :file, :source => "#{user_data}", :destination => "/tmp/vagrantfile-user-data"
-        config.vm.provision :shell, :inline => "mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/", :privileged => true
+        config_vm.vm.provision :file, :source => "#{user_data}", :destination => "/tmp/vagrantfile-user-data"
+        config_vm.vm.provision :shell, :inline => "mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/", :privileged => true
       end
-
-      # Gather hosts into inventory pool
-      $slingshot.add_instance($instances[i])
     end
   end
 end

@@ -1,3 +1,5 @@
+vendor/
 output.yaml
+.bundle/
 .vagrant/
 .temp-user-data.yaml
