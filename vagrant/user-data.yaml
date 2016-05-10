@@ -7,3 +7,10 @@ write_files:
     group: root
     content: |
       127.0.0.1 localhost
+  - path: /etc/resolv.conf
+    permissions: "0644"
+    owner: root
+    group: root
+    content: |
+      nameserver 8.8.8.8
+      nameserver 8.8.4.4
