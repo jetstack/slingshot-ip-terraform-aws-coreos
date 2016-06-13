@@ -73,7 +73,7 @@ class Slingshot
   end
 
   def coreos_image_version
-    'current'
+    '1010.5.0'
   end
 
   def network
