@@ -102,14 +102,6 @@ class Slingshot
 
   def output
     {
-      'general' => {
-        'cluster' => {
-          'kubernetes' => {
-            # this is needed as vagrant's eth0 is a NAT interface, kubernetes needs to run on eth1
-            'interface' => 'eth1',
-          },
-        },
-      },
       'inventory' => @instances,
     }
   end
