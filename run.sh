@@ -18,6 +18,19 @@ commands:
       - .vagrant/
     workingDirContent: !!binary |
 $(tar -C vagrant -czf - . | base64 | awk '{print "      "$1}')
+  destroy:
+    execs:
+      -
+        - vagrant
+        - destroy
+        - -f
+    type: host
+    parameterFile: parameters.yaml
+    resultFile: output.yaml
+    persistPaths:
+      - .vagrant/
+    workingDirContent: !!binary |
+$(tar -C vagrant -czf - . | base64 | awk '{print "      "$1}')
 EOF
 }
 
